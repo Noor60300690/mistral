@@ -6,131 +6,109 @@ from dotenv import load_dotenv
 # ==============================
 # Load API Key Securely
 # ==============================
-load_dotenv()  # loads .env in same folder
+load_dotenv()
 api_key = os.getenv("MISTRAL_API_KEY")
 
-st.set_page_config(page_title="AI Customer Support", page_icon="🏦")
-
-# If API key is missing, stop early with a friendly message
-if not api_key:
-    st.error(
-        "MISTRAL_API_KEY is missing.\n\n"
-        "Fix:\n"
-        "1) Create a file named `.env` in the SAME folder as this chatbot.py\n"
-        "2) Add this line:\n"
-        "   MISTRAL_API_KEY=your_key_here\n\n"
-        "Then restart Streamlit."
-    )
-    st.stop()
-
-# Create client only after confirming key exists
 client = Mistral(api_key=api_key)
-
-# Choose a safe default model (cheaper + usually available)
-MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
-
-
-# ==============================
-# Helper: safe call to Mistral
-# ==============================
-def call_mistral(prompt: str) -> str:
-    try:
-        response = client.chat.complete(
-            model=MODEL,
-            messages=[UserMessage(content=prompt)],
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        # Show readable message in UI instead of full traceback
-        st.error(f"Error calling Mistral API: {e}")
-        return ""
-
 
 # ==============================
 # Intent Classification Module
 # ==============================
-def classify_inquiry(inquiry: str) -> str:
+def classify_inquiry(inquiry):
     prompt = f"""
-You are a bank customer service bot.
-Categorize the inquiry into ONE of these categories exactly:
+    You are a bank customer service bot.
+    Categorize the inquiry into ONE of these categories:
 
-card arrival
-change pin
-exchange rate
-country support
-cancel transfer
-charge dispute
-customer service
+    card arrival
+    change pin
+    exchange rate
+    country support
+    cancel transfer
+    charge dispute
+    customer service
 
-Rules:
-- Output ONLY the category name (no extra words, no punctuation).
+    Only return the category name.
 
-Inquiry: {inquiry}
-Category:
-"""
-    return call_mistral(prompt)
+    Inquiry: {inquiry}
+    """
+
+    response = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[UserMessage(content=prompt)]
+    )
+
+    return response.choices[0].message.content.strip()
 
 
 # ==============================
 # Response Generation Module
 # ==============================
-def generate_response(inquiry: str, category: str) -> str:
+def generate_response(inquiry, category):
     prompt = f"""
-You are a professional bank support assistant.
+    You are a professional bank support assistant.
 
-Detected category: {category}
+    The detected category is: {category}
 
-Write a helpful, clear, and professional response to the customer inquiry below.
-Keep it friendly and concise (3-6 sentences max).
+    Provide a helpful, clear, and professional response
+    to the following customer inquiry:
 
-Customer inquiry:
-{inquiry}
-"""
-    return call_mistral(prompt)
+    {inquiry}
+
+    Keep the tone friendly and concise.
+    """
+
+    response = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[UserMessage(content=prompt)]
+    )
+
+    return response.choices[0].message.content
 
 
 # ==============================
-# Summarization Module
+# Summarization Module (Optional)
 # ==============================
-def summarize_text(text: str) -> str:
+def summarize_text(text):
     prompt = f"""
-Summarize the following text clearly and concisely in 3-5 bullet points:
+    Summarize the following text clearly and concisely:
 
-{text}
-"""
-    return call_mistral(prompt)
+    {text}
+    """
+
+    response = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[UserMessage(content=prompt)]
+    )
+
+    return response.choices[0].message.content
 
 
 # ==============================
 # Streamlit Web Interface
 # ==============================
+st.set_page_config(page_title="AI Customer Support", page_icon="🏦")
+
 st.title("AI Customer Support Chatbot")
-st.caption(f"Powered by Mistral AI • Model: {MODEL}")
+st.write("Powered by Mistral AI")
 
 option = st.radio("Choose mode:", ["Customer Support", "Summarize Text"])
-user_input = st.text_area("Enter your message:", height=150)
 
-if st.button("Submit") and user_input.strip():
+user_input = st.text_area("Enter your message:")
+
+if st.button("Submit") and user_input:
 
     if option == "Customer Support":
-        with st.spinner("Classifying inquiry..."):
-            category = classify_inquiry(user_input)
+        category = classify_inquiry(user_input)
+        answer = generate_response(user_input, category)
 
-        if category:
-            st.subheader("Detected Category:")
-            st.success(category)
+        st.subheader("Detected Category:")
+        st.success(category)
 
-            with st.spinner("Generating response..."):
-                answer = generate_response(user_input, category)
+        st.subheader("AI Response:")
+        st.write(answer)
 
-            if answer:
-                st.subheader("AI Response:")
-                st.write(answer)
+    elif option == "Summarize Text":
+        summary = summarize_text(user_input)
 
-    else:
-        with st.spinner("Summarizing..."):
-            summary = summarize_text(user_input)
-
-        if summary:
-            st.subheader("Summary:")
-            st.write(summary)
+        st.subheader("Summary:")
+        st.write(summary)
